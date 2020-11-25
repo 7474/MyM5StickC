@@ -8,8 +8,7 @@
 #include <WiFi.h>
 #include "env.h"
 
-// TODO EEPROM.length() が 0 で読み書きできないのが解決したらまた試す。
-//#include <EEPROM.h>
+#include <EEPROM.h>
 #include "MackerelClient.h"
 MackerelHostMetric hostMetricsPool[10];
 MackerelServiceMetric serviceMetricsPool[10];
@@ -39,14 +38,14 @@ void drawTime(int x, int y) {
           RTCDate.Year, RTCDate.Month, RTCDate.Date,
           RTCtime.Hours, RTCtime.Minutes, RTCtime.Seconds);
 
-//  InkPageSprite.drawString(x, y, flushStrBuf);
-//  InkPageSprite.pushSprite();
+  M5.Lcd.setCursor(x, y);
+  M5.Lcd.println(flushStrBuf);
 }
 
 void drawLog(char* message) {
-  drawTime(5, 170);
-//  InkPageSprite.drawString(10, 185, message);
-//  InkPageSprite.pushSprite();
+  drawTime(0, 0);
+  M5.Lcd.setCursor(0, 15);
+  M5.Lcd.println(message);
 }
 
 void flushTime() {
@@ -68,21 +67,21 @@ float altitude; // m
 float seaLevelhPa = 1026.0; // hPa
 
 void flushEnv() {
-//  InkPageSprite.drawString(5, 30, "BMP280");
-//  sprintf(flushStrBuf, "%2.2fC %4.1fhPa %4.0fm",
-//          temperature, pressure / 100.0f, altitude);
-//  InkPageSprite.drawString(10, 45, flushStrBuf);
-//
-//  InkPageSprite.drawString(5, 60, "SHT30");
-//  if (sht3xResult.error == SHT3XD_NO_ERROR) {
-//    sprintf(flushStrBuf, "%2.2fC %2.1f%%",
-//            sht3xResult.t, sht3xResult.rh);
-//  } else {
-//    sprintf(flushStrBuf, "[ERROR] Code #%d", sht3xResult.error);
-//  }
-//  InkPageSprite.drawString(10, 75, flushStrBuf);
-//
-//  InkPageSprite.pushSprite();
+  //  InkPageSprite.drawString(5, 30, "BMP280");
+  //  sprintf(flushStrBuf, "%2.2fC %4.1fhPa %4.0fm",
+  //          temperature, pressure / 100.0f, altitude);
+  //  InkPageSprite.drawString(10, 45, flushStrBuf);
+  //
+  //  InkPageSprite.drawString(5, 60, "SHT30");
+  //  if (sht3xResult.error == SHT3XD_NO_ERROR) {
+  //    sprintf(flushStrBuf, "%2.2fC %2.1f%%",
+  //            sht3xResult.t, sht3xResult.rh);
+  //  } else {
+  //    sprintf(flushStrBuf, "[ERROR] Code #%d", sht3xResult.error);
+  //  }
+  //  InkPageSprite.drawString(10, 75, flushStrBuf);
+  //
+  //  InkPageSprite.pushSprite();
 }
 
 void updateEnv() {
@@ -135,11 +134,38 @@ void taikin() {
   akashiClient.stamp(AkashiStampTypeTaikin);
 }
 
+// XXX 他の永続化と合わせてFix。
+const int eepromSize = 1000;
+
 void setupM5StickC() {
-  M5.begin();
+  M5.begin();  
+
+  // https://github.com/m5stack/m5-docs/blob/master/docs/en/api/lcd_m5stickc.md
   M5.Lcd.setRotation(3);
   M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.fillScreen(BLUE);
+  M5.Lcd.setTextColor(WHITE, BLACK);
+  M5.Lcd.drawCentreString("My M5StickC", 80, 30, 1);
+  delay(2000);
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.setCursor(0, 0);
+  
+  // Grove for M5StickC
+  Wire.begin(0,26);
 
+  // https://github.com/espressif/arduino-esp32/blob/master/libraries/EEPROM/examples/eeprom_write/eeprom_write.ino
+  Serial.println("start...");
+  if (!EEPROM.begin(eepromSize))
+  {
+    Serial.println("failed to initialise EEPROM"); delay(1000000);
+  }
+  Serial.println(" bytes read from Flash . Values are:");
+  for (int i = 0; i < eepromSize; i++)
+  {
+    Serial.print(byte(EEPROM.read(i))); Serial.print(" ");
+  }
+  Serial.println();
+  
   putLog("M5StickC initialized.");
 }
 
@@ -202,17 +228,35 @@ void setupEnv() {
   putLog("Env initialized.");
 }
 
+const int hostIdAddress = 4;
 // ホストIDは固定長だけれど何となく長めに取っておく。
 char hostId[32];
+const int hostIdVersionAddress = 0;
+const char currentHostIdVersion[4] = "001";
+char hostIdVersion[4];
 void setupMackerel() {
-  // TODO どっかにホストIDを永続化できるようになったら動的にホスト登録したいもんだ
-  // - 永続化されたホストIDを読む
-  // - ホストIDがなければ登録する
-  //  mackerelClient.registerHost("register-by-m5", hostId);
-  //  Serial.print("registerHost: ");
-  //  Serial.println(hostId);
+  // XXX EEPROMのライブラリが切り替わってこれ無効になった？
+  // 書けてる気がする
+  int eepromLength = EEPROM.length();
+  Serial.print("EEPROM length:");
+  Serial.println(eepromLength);
 
-  sprintf(hostId, "%s", mackerelHostId);
+  EEPROM.get(hostIdVersionAddress, hostIdVersion);
+  if (!strcmp(currentHostIdVersion, hostIdVersion)) {
+    // - 永続化されたホストIDを読む
+    EEPROM.get(hostIdAddress, hostId);
+    Serial.print("loadedHost: ");
+    Serial.println(hostId);
+  } else {
+    // - ホストIDがなければ登録する
+    mackerelClient.registerHost("register-by-m5", hostId);
+    Serial.print("registerHost: ");
+    Serial.println(hostId);
+    EEPROM.put(hostIdVersionAddress, currentHostIdVersion);
+    EEPROM.put(hostIdAddress, hostId);
+    EEPROM.commit();
+  }
+
   mackerelClient.setHostId(hostId);
 
   putLog("Mackerel initialized.");
@@ -227,10 +271,22 @@ void setupAkashi() {
 }
 
 void setup() {
-  // Grove for M5Stack CoreInk
-  Wire.begin(32, 33);
-
   setupM5StickC();
+//
+//  int eepromLength = EEPROM.length();
+//  Serial.print("EEPROM length:");
+//  Serial.println(eepromLength);
+//
+//  uint8_t test = 128;
+//  test = EEPROM.read(0);
+//  Serial.print("EEPROM test:");
+//  Serial.println(test);
+//  test = rand();
+//  Serial.print("EEPROM test:");
+//  Serial.println(test);
+//  EEPROM.write(0, test);
+//  EEPROM.commit();
+
   setupWiFi();
   setupTime();
   setupEnv();
@@ -243,19 +299,19 @@ void setup() {
 }
 
 void beep() {
-//  M5.Speaker.beep();
-//  delay(100);
-//  M5.Speaker.mute();
+  //  M5.Speaker.beep();
+  //  delay(100);
+  //  M5.Speaker.mute();
 }
 
 void beep2() {
-//  M5.Speaker.beep();
-//  delay(50);
-//  M5.Speaker.mute();
-//  delay(25);
-//  M5.Speaker.beep();
-//  delay(150);
-//  M5.Speaker.mute();
+  //  M5.Speaker.beep();
+  //  delay(50);
+  //  M5.Speaker.mute();
+  //  delay(25);
+  //  M5.Speaker.beep();
+  //  delay(150);
+  //  M5.Speaker.mute();
 }
 
 void onBtnA() {
@@ -289,7 +345,7 @@ void onBtnMid() {
   beep();
   int res = akashiClient.updateToken(akashiTokenYoteichi);
   Serial.print("updateToken #");
-  Serial.println(res);  
+  Serial.println(res);
   Serial.println(akashiTokenYoteichi);
   if (!res) {
     drawLog("updateToken Seiko.");
@@ -315,7 +371,7 @@ void loop() {
   if (M5.BtnB.wasPressed()) {
     onBtnB();
   }
-//  if (M5.BtnMID.wasPressed()) {
-//    onBtnMid();
-//  }
+  //  if (M5.BtnMID.wasPressed()) {
+  //    onBtnMid();
+  //  }
 }
