@@ -21,6 +21,26 @@ AkashiClient akashiClient;
 #define MY_SHT30_ADDRESS 0x44
 #define MY_BMP280_ADDRESS 0x76
 
+// EEPROM
+const int eepromSize = 1000;
+// Mackerel
+const int hostIdVersionAddress = 0;
+const char currentHostIdVersion[4] = "001";
+char hostIdVersion[4];
+const int hostIdAddress = 4;
+// ホストIDは固定長だけれど何となく長めに取っておく。
+char hostId[32];
+// AKASHI
+const int akashiTokenVersionAddress = 36;
+const char currentAkashiTokenVersion[4] = "001";
+char akashiTokenVersion[4];
+const int akashiTokenValueAddress = 40;
+// UUID文字列
+char akashiTokenValue[50];
+const int akashiTokenExpiredAtAddress = 90;
+time_t akashiTokenExpiredAt;
+// /EEPROM
+
 RTC_TimeTypeDef RTCtime;
 RTC_DateTypeDef RTCDate;
 
@@ -126,19 +146,51 @@ void updateMyM5StickC() {
   putLog("update proc end.");
 }
 
-void shukkin() {
-  akashiClient.stamp(AkashiStampTypeShukkin);
-}
+void updateAkashiToken() {
+  Serial.println("updateAkashiToken");
+  bool needUpdate = false;
+  EEPROM.get(akashiTokenVersionAddress, akashiTokenVersion);
+  EEPROM.get(akashiTokenValueAddress, akashiTokenValue);
+  EEPROM.get(akashiTokenExpiredAtAddress, akashiTokenExpiredAt);
+  Serial.println(akashiTokenVersion);
+  Serial.println(akashiTokenValue);
+  Serial.println(akashiTokenExpiredAt);
 
-void taikin() {
-  akashiClient.stamp(AkashiStampTypeTaikin);
+  if (!strcmp(currentAkashiTokenVersion, akashiTokenVersion)) {
+    akashiClient.setToken(akashiTokenValue);
+    time_t now = time(NULL);
+    Serial.println(now);
+    Serial.println(now + 60 * 60 * 24 * 7);
+    // 期限まで7週間くらいで更新しとく
+    needUpdate = akashiTokenExpiredAt < now + 60 * 60 * 24 * 7;
+  } else {
+    needUpdate = true;
+  }
+  if (needUpdate) {
+    int res = akashiClient.updateToken(akashiTokenValue, akashiTokenExpiredAt);
+    Serial.print("updateToken #");
+    Serial.println(res);
+    Serial.println(akashiTokenValue);
+    Serial.println(akashiTokenExpiredAt);
+    if (!res) {
+      akashiClient.setToken(akashiTokenValue);
+      EEPROM.put(akashiTokenVersionAddress, currentAkashiTokenVersion);
+      EEPROM.put(akashiTokenValueAddress, akashiTokenValue);
+      EEPROM.put(akashiTokenExpiredAtAddress, akashiTokenExpiredAt);
+      EEPROM.commit();
+      drawLog("updateToken Seiko.");
+    } else {
+      // 更新失敗したら規定値に戻しておく
+      EEPROM.put(akashiTokenVersionAddress, "");
+      EEPROM.commit();
+      akashiClient.setToken(akashiToken);
+      drawLog("updateToken Shippai.");
+    }
+  }
 }
-
-// XXX 他の永続化と合わせてFix。
-const int eepromSize = 1000;
 
 void setupM5StickC() {
-  M5.begin();  
+  M5.begin();
 
   // https://github.com/m5stack/m5-docs/blob/master/docs/en/api/lcd_m5stickc.md
   M5.Lcd.setRotation(3);
@@ -149,9 +201,9 @@ void setupM5StickC() {
   delay(2000);
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(0, 0);
-  
+
   // Grove for M5StickC
-  Wire.begin(0,26);
+  Wire.begin(0, 26);
 
   // https://github.com/espressif/arduino-esp32/blob/master/libraries/EEPROM/examples/eeprom_write/eeprom_write.ino
   Serial.println("start...");
@@ -165,7 +217,7 @@ void setupM5StickC() {
     Serial.print(byte(EEPROM.read(i))); Serial.print(" ");
   }
   Serial.println();
-  
+
   putLog("M5StickC initialized.");
 }
 
@@ -228,19 +280,7 @@ void setupEnv() {
   putLog("Env initialized.");
 }
 
-const int hostIdAddress = 4;
-// ホストIDは固定長だけれど何となく長めに取っておく。
-char hostId[32];
-const int hostIdVersionAddress = 0;
-const char currentHostIdVersion[4] = "001";
-char hostIdVersion[4];
 void setupMackerel() {
-  // XXX EEPROMのライブラリが切り替わってこれ無効になった？
-  // 書けてる気がする
-  int eepromLength = EEPROM.length();
-  Serial.print("EEPROM length:");
-  Serial.println(eepromLength);
-
   EEPROM.get(hostIdVersionAddress, hostIdVersion);
   if (!strcmp(currentHostIdVersion, hostIdVersion)) {
     // - 永続化されたホストIDを読む
@@ -264,7 +304,6 @@ void setupMackerel() {
 
 void setupAkashi() {
   akashiClient.setCompanyCode(akashiCompanyCode);
-  // TODO トークンの更新。
   akashiClient.setToken(akashiToken);
 
   putLog("Akashi initialized.");
@@ -272,21 +311,6 @@ void setupAkashi() {
 
 void setup() {
   setupM5StickC();
-//
-//  int eepromLength = EEPROM.length();
-//  Serial.print("EEPROM length:");
-//  Serial.println(eepromLength);
-//
-//  uint8_t test = 128;
-//  test = EEPROM.read(0);
-//  Serial.print("EEPROM test:");
-//  Serial.println(test);
-//  test = rand();
-//  Serial.print("EEPROM test:");
-//  Serial.println(test);
-//  EEPROM.write(0, test);
-//  EEPROM.commit();
-
   setupWiFi();
   setupTime();
   setupEnv();
@@ -298,24 +322,8 @@ void setup() {
   updateMyM5StickC();
 }
 
-void beep() {
-  //  M5.Speaker.beep();
-  //  delay(100);
-  //  M5.Speaker.mute();
-}
-
-void beep2() {
-  //  M5.Speaker.beep();
-  //  delay(50);
-  //  M5.Speaker.mute();
-  //  delay(25);
-  //  M5.Speaker.beep();
-  //  delay(150);
-  //  M5.Speaker.mute();
-}
-
 void onBtnA() {
-  beep();
+  updateAkashiToken();
   int res = akashiClient.stamp(AkashiStampTypeShukkin);
   Serial.print("AkashiStampTypeShukkin #");
   Serial.println(res);
@@ -324,11 +332,10 @@ void onBtnA() {
   } else {
     drawLog("Shukkin Shippai.");
   }
-  beep2();
 }
 
 void onBtnB() {
-  beep();
+  updateAkashiToken();
   int res = akashiClient.stamp(AkashiStampTypeTaikin);
   Serial.print("AkashiStampTypeTaikin #");
   Serial.println(res);
@@ -337,22 +344,6 @@ void onBtnB() {
   } else {
     drawLog("Taikin Shippai.");
   }
-  beep2();
-}
-
-char akashiTokenYoteichi[64];
-void onBtnMid() {
-  beep();
-  int res = akashiClient.updateToken(akashiTokenYoteichi);
-  Serial.print("updateToken #");
-  Serial.println(res);
-  Serial.println(akashiTokenYoteichi);
-  if (!res) {
-    drawLog("updateToken Seiko.");
-  } else {
-    drawLog("updateToken Shippai.");
-  }
-  beep2();
 }
 
 unsigned long  lastUpdateMillis = 0;
@@ -371,7 +362,4 @@ void loop() {
   if (M5.BtnB.wasPressed()) {
     onBtnB();
   }
-  //  if (M5.BtnMID.wasPressed()) {
-  //    onBtnMid();
-  //  }
 }
