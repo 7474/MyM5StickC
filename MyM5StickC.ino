@@ -58,12 +58,15 @@ void drawTime(int x, int y) {
           RTCDate.Year, RTCDate.Month, RTCDate.Date,
           RTCtime.Hours, RTCtime.Minutes, RTCtime.Seconds);
 
+  // XXX なんかLCDなんも出ない
   M5.Lcd.setCursor(x, y);
   M5.Lcd.println(flushStrBuf);
 }
 
 void drawLog(char* message) {
   drawTime(0, 0);
+  
+  // XXX なんかLCDなんも出ない
   M5.Lcd.setCursor(0, 15);
   M5.Lcd.println(message);
 }
@@ -114,12 +117,11 @@ void updateEnv() {
 
 void sendEnvToMackerel() {
   // Host Metrics
-  // M5Stack CoreInk
-  // XXX これもよそで更新しておいてここでは参照するだけがいいかも。
+  // M5StickC
   float batVoltage = M5.Axp.GetBatVoltage();
   float batCurrent =  M5.Axp.GetBatCurrent();
   mackerelClient.addHostMetric("custom.battery.voltage.lipo80mah", batVoltage);
-  mackerelClient.addHostMetric("custom.battery.current.lipo80mah", batVoltage);
+  mackerelClient.addHostMetric("custom.battery.current.lipo80mah", batCurrent);
   // SHT30
   mackerelClient.addHostMetric("custom.sht30.t", sht3xResult.t);
   mackerelClient.addHostMetric("custom.sht30.rh", sht3xResult.rh);
@@ -278,12 +280,12 @@ void setupEnv() {
 void setupMackerel() {
   EEPROM.get(hostIdVersionAddress, hostIdVersion);
   if (!strcmp(currentHostIdVersion, hostIdVersion)) {
-    // - 永続化されたホストIDを読む
+    // 永続化されたホストIDを読む
     EEPROM.get(hostIdAddress, hostId);
     Serial.print("loadedHost: ");
     Serial.println(hostId);
   } else {
-    // - ホストIDがなければ登録する
+    // ホストIDがなければ登録する
     mackerelClient.registerHost("register-by-m5", hostId);
     Serial.print("registerHost: ");
     Serial.println(hostId);
@@ -319,26 +321,18 @@ void setup() {
 
 void onBtnA() {
   updateAkashiToken();
-  int res = akashiClient.stamp(AkashiStampTypeShukkin);
-  Serial.print("AkashiStampTypeShukkin #");
+  int res = akashiClient.stamp(AkashiStampTypeAuto);
+  Serial.print("AkashiStampTypeAuto #");
   Serial.println(res);
   if (!res) {
-    drawLog("Shukkin Seiko.");
+    drawLog("Kintai Seiko.");
   } else {
-    drawLog("Shukkin Shippai.");
+    drawLog("Kintai Shippai.");
   }
 }
 
 void onBtnB() {
-  updateAkashiToken();
-  int res = akashiClient.stamp(AkashiStampTypeTaikin);
-  Serial.print("AkashiStampTypeTaikin #");
-  Serial.println(res);
-  if (!res) {
-    drawLog("Taikin Seiko.");
-  } else {
-    drawLog("Taikin Shippai.");
-  }
+  // T.B.D.
 }
 
 unsigned long  lastUpdateMillis = 0;
