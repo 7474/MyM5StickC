@@ -113,11 +113,6 @@ void updateEnv() {
 }
 
 void sendEnvToMackerel() {
-  // Service Metrics
-  mackerelClient.addServiceMetric("sht30.t", sht3xResult.t);
-  mackerelClient.addServiceMetric("sht30.rh", sht3xResult.rh);
-  mackerelClient.postServiceMetrics("MyM5StickC");
-
   // Host Metrics
   // M5Stack CoreInk
   // XXX これもよそで更新しておいてここでは参照するだけがいいかも。
